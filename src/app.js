@@ -1,3 +1,8 @@
+/**
+ * App.js is the entry point. It kicks off the
+ * execution of all the other modules.
+ */
+
 var
   // Initialize the application and load bootstrapped
   // data and configuration settings.

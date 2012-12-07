@@ -795,7 +795,12 @@ forEach(objectKeys(Traverse.prototype), function (key) {
 });
 });
 
-require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){var
+require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){/**
+ * Add dependencies to the app sandbox, load
+ * configuration and bootstrap data, and initialize the app.
+ */
+
+var
   // Polyfill old browsers
   shim = require('./es5-shim'),
 
@@ -808,7 +813,9 @@ require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__f
   environment = window.environment || {},
 
   // A data payload bootstrapped into the global namespace
-  // by the server.
+  // by the server. This can save on latency from an
+  // extra get request. Only bootstrap data that you need
+  // at initial render time.
   pageData = window.pageData || {};
 
 app.init({
@@ -15536,10 +15543,11 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
     var sourceId = this.get('id');
 
     // Listen for clicked event, sent from the view.
-    // sourceId is used to namespace the event. The model
+    // sourceId is used to filter the event. The model
     // does not need to know where the event comes from --
     // only which item was clicked.
-    app.on('clicked', sourceId, toggleCheckedIn.bind(this));
+    app.on('toggled-checkedin', sourceId,
+      toggleCheckedIn.bind(this));
 
     // Relay the change event so the view can listen for it
     // without knowing anything about the model.
@@ -15553,11 +15561,12 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
         checkedIn: item.get('checkedIn')
       });
 
-      // Broadcast the message on the app-wide event aggregator.
+      // Broadcast the message on the aggregator.
       app.trigger('changed', event);
     }.bind(this));  
   },
 
+  // The collection expects a Backbone.Model constructor.
   api = Model.extend({
     initialize: delegate,
     toggleCheckedIn: toggleCheckedIn
@@ -15566,8 +15575,7 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
 module.exports = api;
 });
 
-require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var namespace = 'guestlistview',
-  app = require('./bootstrap'),
+require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var app = require('./bootstrap'),
   View = require('backbone-browserify').View,
 
   $ = app.$,
@@ -15585,7 +15593,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
         sourceId: $(this).attr('id')
       });
 
-    app.trigger('clicked', event);
+    app.trigger('toggled-checkedin', event);
   },
 
   delegate = function delegate() {
@@ -15646,7 +15654,12 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
 module.exports = api;
 });
 
-require.define("/src/app.js",function(require,module,exports,__dirname,__filename,process){var
+require.define("/src/app.js",function(require,module,exports,__dirname,__filename,process){/**
+ * App.js is the entry point. It kicks off the
+ * execution of all the other modules.
+ */
+
+var
   // Initialize the application and load bootstrapped
   // data and configuration settings.
   app = require('./bootstrap'),
@@ -15671,7 +15684,12 @@ require.define("/src/app.js",function(require,module,exports,__dirname,__filenam
 }());});
 require("/src/app.js");
 
-require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){var
+require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){/**
+ * Add dependencies to the app sandbox, load
+ * configuration and bootstrap data, and initialize the app.
+ */
+
+var
   // Polyfill old browsers
   shim = require('./es5-shim'),
 
@@ -15684,7 +15702,9 @@ require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__f
   environment = window.environment || {},
 
   // A data payload bootstrapped into the global namespace
-  // by the server.
+  // by the server. This can save on latency from an
+  // extra get request. Only bootstrap data that you need
+  // at initial render time.
   pageData = window.pageData || {};
 
 app.init({
@@ -15717,8 +15737,7 @@ module.exports = api;
 });
 require("/src/guestlistcollection.js");
 
-require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var namespace = 'guestlistview',
-  app = require('./bootstrap'),
+require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var app = require('./bootstrap'),
   View = require('backbone-browserify').View,
 
   $ = app.$,
@@ -15736,7 +15755,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
         sourceId: $(this).attr('id')
       });
 
-    app.trigger('clicked', event);
+    app.trigger('toggled-checkedin', event);
   },
 
   delegate = function delegate() {
@@ -15810,10 +15829,11 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
     var sourceId = this.get('id');
 
     // Listen for clicked event, sent from the view.
-    // sourceId is used to namespace the event. The model
+    // sourceId is used to filter the event. The model
     // does not need to know where the event comes from --
     // only which item was clicked.
-    app.on('clicked', sourceId, toggleCheckedIn.bind(this));
+    app.on('toggled-checkedin', sourceId,
+      toggleCheckedIn.bind(this));
 
     // Relay the change event so the view can listen for it
     // without knowing anything about the model.
@@ -15827,11 +15847,12 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
         checkedIn: item.get('checkedIn')
       });
 
-      // Broadcast the message on the app-wide event aggregator.
+      // Broadcast the message on the aggregator.
       app.trigger('changed', event);
     }.bind(this));  
   },
 
+  // The collection expects a Backbone.Model constructor.
   api = Model.extend({
     initialize: delegate,
     toggleCheckedIn: toggleCheckedIn

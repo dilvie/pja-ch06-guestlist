@@ -1,5 +1,4 @@
-var namespace = 'guestlistview',
-  app = require('./bootstrap'),
+var app = require('./bootstrap'),
   View = require('backbone-browserify').View,
 
   $ = app.$,
@@ -17,7 +16,7 @@ var namespace = 'guestlistview',
         sourceId: $(this).attr('id')
       });
 
-    app.trigger('clicked', event);
+    app.trigger('toggled-checkedin', event);
   },
 
   delegate = function delegate() {

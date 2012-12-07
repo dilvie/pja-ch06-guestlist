@@ -10,10 +10,11 @@ var Model = require('backbone-browserify').Model,
     var sourceId = this.get('id');
 
     // Listen for clicked event, sent from the view.
-    // sourceId is used to namespace the event. The model
+    // sourceId is used to filter the event. The model
     // does not need to know where the event comes from --
     // only which item was clicked.
-    app.on('clicked', sourceId, toggleCheckedIn.bind(this));
+    app.on('toggled-checkedin', sourceId,
+      toggleCheckedIn.bind(this));
 
     // Relay the change event so the view can listen for it
     // without knowing anything about the model.
@@ -27,11 +28,12 @@ var Model = require('backbone-browserify').Model,
         checkedIn: item.get('checkedIn')
       });
 
-      // Broadcast the message on the app-wide event aggregator.
+      // Broadcast the message on the aggregator.
       app.trigger('changed', event);
     }.bind(this));  
   },
 
+  // The collection expects a Backbone.Model constructor.
   api = Model.extend({
     initialize: delegate,
     toggleCheckedIn: toggleCheckedIn
