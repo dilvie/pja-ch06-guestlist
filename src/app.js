@@ -14,10 +14,10 @@ var
   $ = app.$,
   $container = $('#container');
 
-(function init() {
+$(function () {
 
   var guestlist = collection.create(),
-    guestlistView = view.create(container);
+    guestlistView = view.create();
 
   // Attach it to the DOM first.
   $container.empty().append(guestlistView.$el);
@@ -25,4 +25,4 @@ var
   // Then call render on the view.
   guestlistView.render(guestlist);
 
-}());
+});

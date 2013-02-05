@@ -1,16 +1,23 @@
-var app = require('./bootstrap'),
-  View = require('backbone-browserify').View,
+var app = require('./tinyapp'),
 
+  // Assign Backbone.View to the View var.
+
+  View = require('backbone-browserify').View,
+  
   $ = app.$,
   checkedinClass = 'icon-check',
   listClass = 'dropdown-menu',
   guestClass = 'guest',
 
-  // Rebroadcast DOM click events on the app event aggregator.
+
+  // Rebroadcast DOM click events on the app event
+  // aggregator.
+
   relayClick = function relayClick(e) {
 
     // Get the ID from the element and use it to
     // namespace the event.
+
     var sourceId = $(this).attr('id'),
       event = app.extend(e, {
         sourceId: $(this).attr('id')
@@ -21,18 +28,23 @@ var app = require('./bootstrap'),
 
   delegate = function delegate() {
 
-    // Delegate all click events to the ul element.
+    // Delegate all click events to the parent element.
+
     this.$el.on('click', '.' + guestClass, relayClick);
 
     // Listen for changed events from the model
     // and make sure the element reflects the current
     // state.
-    app.on('changed', function changeHandler(event) {
+
+    app.on('changed.checkedIn', function changeHandler(event) {
       var id = event.id;
 
-      // Select the right list item by id
+
+      // Select the right list item by id.
+
       this.$el.find('#' + id)
         .toggleClass(checkedinClass, event.checkedIn);
+
     }.bind(this));
   },
 
@@ -43,6 +55,7 @@ var app = require('./bootstrap'),
 
     // Loop over the passed-in guest models and render
     // them as li elements.
+
     guestlist.forEach(function (guestModel) {
       var $guest;
       guest = guestModel.toJSON();
@@ -66,7 +79,7 @@ var app = require('./bootstrap'),
   }),
 
   // Expose a factory function.
-  create = function create(el) {
+  create = function create() {
     return new GuestlistView();
   },
 

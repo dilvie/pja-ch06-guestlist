@@ -1,9 +1,9 @@
-var namespace = 'guestlistcollection',
-  app = require('./bootstrap'),
+var app = require('./tinyapp'),
   Model = require('./guestmodel'),
-  Collection = require('backbone-browserify').Collection.extend({
-    model: Model
-  }),
+  Collection = require('backbone-browserify')
+    .Collection.extend({
+      model: Model
+    }),
 
   create = function create(models) {
     models = models || app.pageData.guestList;

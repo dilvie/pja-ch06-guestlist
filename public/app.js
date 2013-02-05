@@ -1,27 +1,6 @@
 (function(){
-/*! guestlist - v0.1.0 - 2012-12-06
- * Copyright (c) 2012 function () {
-
-// If the string looks like an identifier, then we can return it as is.
-// If the string contains no control characters, no quote characters, and no
-// backslash characters, then we can simply slap some quotes around it.
-// Otherwise we must also replace the offending characters with safe
-// sequences.
-
-            if (ix.test(this)) {
-                return this;
-            }
-            if (nx.test(this)) {
-                return '"' + this.replace(nxg, function (a) {
-                    var c = escapes[a];
-                    if (c) {
-                        return c;
-                    }
-                    return '\\u' + ('0000' + a.charCodeAt().toString(16)).slice(-4);
-                }) + '"';
-            }
-            return '"' + this + '"';
-        };
+/*! guestlist - v0.1.0 - 2013-02-05
+ * Copyright (c) 2013 ;
  * Licensed under the  license */
 
 var require = function (file, cwd) {
@@ -33,12 +12,12 @@ var require = function (file, cwd) {
     var cached = require.cache[resolved];
     var res = cached? cached.exports : mod();
     return res;
-}
+};
 
 require.paths = [];
 require.modules = {};
 require.cache = {};
-require.extensions = [".js",".coffee"];
+require.extensions = [".js",".coffee",".json"];
 
 require._core = {
     'assert': true,
@@ -165,10 +144,13 @@ require.alias = function (from, to) {
 
 (function () {
     var process = {};
+    var global = typeof window !== 'undefined' ? window : {};
+    var definedProcess = false;
     
     require.define = function (filename, fn) {
-        if (require.modules.__browserify_process) {
+        if (!definedProcess && require.modules.__browserify_process) {
             process = require.modules.__browserify_process();
+            definedProcess = true;
         }
         
         var dirname = require._core[filename]
@@ -177,7 +159,14 @@ require.alias = function (from, to) {
         ;
         
         var require_ = function (file) {
-            return require(file, dirname);
+            var requiredModule = require(file, dirname);
+            var cached = require.cache[require.resolve(file, dirname)];
+
+            if (cached && cached.parent === null) {
+                cached.parent = module_;
+            }
+
+            return requiredModule;
         };
         require_.resolve = function (name) {
             return require.resolve(name, dirname);
@@ -185,7 +174,13 @@ require.alias = function (from, to) {
         require_.modules = require.modules;
         require_.define = require.define;
         require_.cache = require.cache;
-        var module_ = { exports : {} };
+        var module_ = {
+            id : filename,
+            filename: filename,
+            exports : {},
+            loaded : false,
+            parent: null
+        };
         
         require.modules[filename] = function () {
             require.cache[filename] = module_;
@@ -196,15 +191,17 @@ require.alias = function (from, to) {
                 module_.exports,
                 dirname,
                 filename,
-                process
+                process,
+                global
             );
+            module_.loaded = true;
             return module_.exports;
         };
     };
 })();
 
 
-require.define("path",function(require,module,exports,__dirname,__filename,process){function filter (xs, fn) {
+require.define("path",function(require,module,exports,__dirname,__filename,process,global){function filter (xs, fn) {
     var res = [];
     for (var i = 0; i < xs.length; i++) {
         if (fn(xs[i], i, xs)) res.push(xs[i]);
@@ -338,17 +335,24 @@ exports.basename = function(path, ext) {
 exports.extname = function(path) {
   return splitPathRe.exec(path)[3] || '';
 };
+
 });
 
-require.define("__browserify_process",function(require,module,exports,__dirname,__filename,process){var process = module.exports = {};
+require.define("__browserify_process",function(require,module,exports,__dirname,__filename,process,global){var process = module.exports = {};
 
 process.nextTick = (function () {
-    var queue = [];
+    var canSetImmediate = typeof window !== 'undefined'
+        && window.setImmediate;
     var canPost = typeof window !== 'undefined'
         && window.postMessage && window.addEventListener
     ;
-    
+
+    if (canSetImmediate) {
+        return function (f) { return window.setImmediate(f) };
+    }
+
     if (canPost) {
+        var queue = [];
         window.addEventListener('message', function (ev) {
             if (ev.source === window && ev.data === 'browserify-tick') {
                 ev.stopPropagation();
@@ -358,14 +362,15 @@ process.nextTick = (function () {
                 }
             }
         }, true);
-    }
-    
-    return function (fn) {
-        if (canPost) {
+
+        return function nextTick(fn) {
             queue.push(fn);
             window.postMessage('browserify-tick', '*');
-        }
-        else setTimeout(fn, 0);
+        };
+    }
+
+    return function nextTick(fn) {
+        setTimeout(fn, 0);
     };
 })();
 
@@ -388,102 +393,13 @@ process.binding = function (name) {
         cwd = path.resolve(dir, cwd);
     };
 })();
+
 });
 
-require.define("vm",function(require,module,exports,__dirname,__filename,process){module.exports = require("vm-browserify")});
-
-require.define("/node_modules/vm-browserify/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"index.js"}});
-
-require.define("/node_modules/vm-browserify/index.js",function(require,module,exports,__dirname,__filename,process){var Object_keys = function (obj) {
-    if (Object.keys) return Object.keys(obj)
-    else {
-        var res = [];
-        for (var key in obj) res.push(key)
-        return res;
-    }
-};
-
-var forEach = function (xs, fn) {
-    if (xs.forEach) return xs.forEach(fn)
-    else for (var i = 0; i < xs.length; i++) {
-        fn(xs[i], i, xs);
-    }
-};
-
-var Script = exports.Script = function NodeScript (code) {
-    if (!(this instanceof Script)) return new Script(code);
-    this.code = code;
-};
-
-Script.prototype.runInNewContext = function (context) {
-    if (!context) context = {};
-    
-    var iframe = document.createElement('iframe');
-    if (!iframe.style) iframe.style = {};
-    iframe.style.display = 'none';
-    
-    document.body.appendChild(iframe);
-    
-    var win = iframe.contentWindow;
-    
-    forEach(Object_keys(context), function (key) {
-        win[key] = context[key];
-    });
-     
-    if (!win.eval && win.execScript) {
-        // win.eval() magically appears when this is called in IE:
-        win.execScript('null');
-    }
-    
-    var res = win.eval(this.code);
-    
-    forEach(Object_keys(win), function (key) {
-        context[key] = win[key];
-    });
-    
-    document.body.removeChild(iframe);
-    
-    return res;
-};
-
-Script.prototype.runInThisContext = function () {
-    return eval(this.code); // maybe...
-};
-
-Script.prototype.runInContext = function (context) {
-    // seems to be just runInNewContext on magical context objects which are
-    // otherwise indistinguishable from objects except plain old objects
-    // for the parameter segfaults node
-    return this.runInNewContext(context);
-};
-
-forEach(Object_keys(Script.prototype), function (name) {
-    exports[name] = Script[name] = function (code) {
-        var s = Script(code);
-        return s[name].apply(s, [].slice.call(arguments, 1));
-    };
+require.define("/node_modules/traverse/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
 });
 
-exports.createScript = function (code) {
-    return exports.Script(code);
-};
-
-exports.createContext = Script.createContext = function (context) {
-    // not really sure what this one does
-    // seems to just make a shallow copy
-    var copy = {};
-    if(typeof context === 'object') {
-        forEach(Object_keys(context), function (key) {
-            copy[key] = context[key];
-        });
-    }
-    return copy;
-};
-});
-
-require.define("/node_modules/traverse/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"index.js"}});
-
-require.define("/node_modules/traverse/index.js",function(require,module,exports,__dirname,__filename,process){var traverse = module.exports = function (obj) {
+require.define("/node_modules/traverse/index.js",function(require,module,exports,__dirname,__filename,process,global){var traverse = module.exports = function (obj) {
     return new Traverse(obj);
 };
 
@@ -793,9 +709,10 @@ forEach(objectKeys(Traverse.prototype), function (key) {
         return t[key].apply(t, args);
     };
 });
+
 });
 
-require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){/**
+require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process,global){/**
  * Add dependencies to the app sandbox, load
  * configuration and bootstrap data, and initialize the app.
  */
@@ -824,11 +741,13 @@ app.init({
 });
 
 module.exports = app;
+
 });
 
-require.define("/node_modules/es5-shim/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"es5-shim.js"}});
+require.define("/node_modules/es5-shim/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"es5-shim.js"}
+});
 
-require.define("/node_modules/es5-shim/es5-shim.js",function(require,module,exports,__dirname,__filename,process){// Copyright 2009-2012 by contributors, MIT License
+require.define("/node_modules/es5-shim/es5-shim.js",function(require,module,exports,__dirname,__filename,process,global){// Copyright 2009-2012 by contributors, MIT License
 // vim: ts=4 sts=4 sw=4 expandtab
 
 // Module systems magic dance
@@ -1809,11 +1728,13 @@ var toObject = function (o) {
 };
 
 });
+
 });
 
-require.define("/node_modules/tinyapp/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"./src/tinyapp.js"}});
+require.define("/node_modules/tinyapp/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./src/tinyapp.js"}
+});
 
-require.define("/node_modules/tinyapp/src/tinyapp.js",function(require,module,exports,__dirname,__filename,process){var $ = require('jquery-browserify'),
+require.define("/node_modules/tinyapp/src/tinyapp.js",function(require,module,exports,__dirname,__filename,process,global){var $ = require('jquery-browserify'),
   EventEmitter2 = require('eventemitter2').EventEmitter2,
   underscore = require('underscore'),
   bb = require('backbone-browserify'),
@@ -1955,11 +1876,13 @@ if (typeof window !== 'undefined') {
 }
 
 module.exports = api;
+
 });
 
-require.define("/node_modules/jquery-browserify/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"./lib/jquery.js","browserify":{"dependencies":"","main":"lib/jquery.js"}}});
+require.define("/node_modules/jquery-browserify/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./lib/jquery.js","browserify":{"dependencies":"","main":"lib/jquery.js"}}
+});
 
-require.define("/node_modules/jquery-browserify/lib/jquery.js",function(require,module,exports,__dirname,__filename,process){// Uses Node, AMD or browser globals to create a module.
+require.define("/node_modules/jquery-browserify/lib/jquery.js",function(require,module,exports,__dirname,__filename,process,global){// Uses Node, AMD or browser globals to create a module.
 
 // If you want something that will work in other stricter CommonJS environments,
 // or if you need to create a circular dependency, see commonJsStrict.js
@@ -11291,11 +11214,13 @@ if ( typeof define === "function" && define.amd && define.amd.jQuery ) {
 return jQuery;
 
 })( window ); }));
+
 });
 
-require.define("/node_modules/tinyapp/node_modules/eventemitter2/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"./lib/eventemitter2.js"}});
+require.define("/node_modules/tinyapp/node_modules/eventemitter2/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./lib/eventemitter2.js"}
+});
 
-require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitter2.js",function(require,module,exports,__dirname,__filename,process){;!function(exports, undefined) {
+require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitter2.js",function(require,module,exports,__dirname,__filename,process,global){;!function(exports, undefined) {
 
   var isArray = Array.isArray ? Array.isArray : function _isArray(obj) {
     return Object.prototype.toString.call(obj) === "[object Array]";
@@ -11303,21 +11228,31 @@ require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitte
   var defaultMaxListeners = 10;
 
   function init() {
-    this._events = new Object;
+    this._events = {};
+    if (this._conf) {
+      configure.call(this, this._conf);
+    }
   }
 
   function configure(conf) {
     if (conf) {
+      
+      this._conf = conf;
+      
       conf.delimiter && (this.delimiter = conf.delimiter);
+      conf.maxListeners && (this._events.maxListeners = conf.maxListeners);
       conf.wildcard && (this.wildcard = conf.wildcard);
+      conf.newListener && (this.newListener = conf.newListener);
+
       if (this.wildcard) {
-        this.listenerTree = new Object;
+        this.listenerTree = {};
       }
     }
   }
 
   function EventEmitter(conf) {
-    this._events = new Object;
+    this._events = {};
+    this.newListener = false;
     configure.call(this, conf);
   }
 
@@ -11451,7 +11386,7 @@ require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitte
     while (name) {
 
       if (!tree[name]) {
-        tree[name] = new Object;
+        tree[name] = {};
       }
 
       tree = tree[name];
@@ -11506,6 +11441,8 @@ require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitte
   EventEmitter.prototype.setMaxListeners = function(n) {
     this._events || init.call(this);
     this._events.maxListeners = n;
+    if (!this._conf) this._conf = {};
+    this._conf.maxListeners = n;
   };
 
   EventEmitter.prototype.event = '';
@@ -11537,11 +11474,12 @@ require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitte
   };
 
   EventEmitter.prototype.emit = function() {
+    
     this._events || init.call(this);
 
     var type = arguments[0];
 
-    if (type === 'newListener') {
+    if (type === 'newListener' && !this.newListener) {
       if (!this._events.newListener) { return false; }
     }
 
@@ -11842,11 +11780,13 @@ require.define("/node_modules/tinyapp/node_modules/eventemitter2/lib/eventemitte
   }
 
 }(typeof process !== 'undefined' && typeof process.title !== 'undefined' && typeof exports !== 'undefined' ? exports : window);
+
 });
 
-require.define("/node_modules/tinyapp/node_modules/underscore/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"underscore.js"}});
+require.define("/node_modules/tinyapp/node_modules/underscore/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"underscore.js"}
+});
 
-require.define("/node_modules/tinyapp/node_modules/underscore/underscore.js",function(require,module,exports,__dirname,__filename,process){//     Underscore.js 1.3.3
+require.define("/node_modules/tinyapp/node_modules/underscore/underscore.js",function(require,module,exports,__dirname,__filename,process,global){//     Underscore.js 1.3.3
 //     (c) 2009-2012 Jeremy Ashkenas, DocumentCloud Inc.
 //     Underscore is freely distributable under the MIT license.
 //     Portions of Underscore are inspired or borrowed from Prototype,
@@ -12905,11 +12845,13 @@ require.define("/node_modules/tinyapp/node_modules/underscore/underscore.js",fun
   };
 
 }).call(this);
+
 });
 
-require.define("/node_modules/backbone-browserify/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"lib/backbone-browserify.js","browserify":{"dependencies":{"underscore":">=1.1.2"},"main":"lib/backbone-browserify.js"}}});
+require.define("/node_modules/backbone-browserify/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"lib/backbone-browserify.js","browserify":{"dependencies":{"underscore":">=1.1.2"},"main":"lib/backbone-browserify.js"}}
+});
 
-require.define("/node_modules/backbone-browserify/lib/backbone-browserify.js",function(require,module,exports,__dirname,__filename,process){//     Backbone.js 0.9.2
+require.define("/node_modules/backbone-browserify/lib/backbone-browserify.js",function(require,module,exports,__dirname,__filename,process,global){//     Backbone.js 0.9.2
 
 //     (c) 2010-2012 Jeremy Ashkenas, DocumentCloud Inc.
 //     Backbone may be freely distributed under the MIT license.
@@ -14347,17 +14289,16 @@ require.define("/node_modules/backbone-browserify/lib/backbone-browserify.js",fu
   if (module == null) { module = {}; };
   module.exports = create(this);
     
-}(this);});
+}(this);
+});
 
-require.define("/node_modules/backbone-browserify/node_modules/underscore/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"underscore.js"}});
+require.define("/node_modules/backbone-browserify/node_modules/underscore/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"underscore.js"}
+});
 
-require.define("/node_modules/backbone-browserify/node_modules/underscore/underscore.js",function(require,module,exports,__dirname,__filename,process){//     Underscore.js 1.3.3
-//     (c) 2009-2012 Jeremy Ashkenas, DocumentCloud Inc.
-//     Underscore is freely distributable under the MIT license.
-//     Portions of Underscore are inspired or borrowed from Prototype,
-//     Oliver Steele's Functional, and John Resig's Micro-Templating.
-//     For all details and documentation:
-//     http://documentcloud.github.com/underscore
+require.define("/node_modules/backbone-browserify/node_modules/underscore/underscore.js",function(require,module,exports,__dirname,__filename,process,global){//     Underscore.js 1.4.4
+//     http://underscorejs.org
+//     (c) 2009-2013 Jeremy Ashkenas, DocumentCloud Inc.
+//     Underscore may be freely distributed under the MIT license.
 
 (function() {
 
@@ -14377,8 +14318,9 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   var ArrayProto = Array.prototype, ObjProto = Object.prototype, FuncProto = Function.prototype;
 
   // Create quick reference variables for speed access to core prototypes.
-  var slice            = ArrayProto.slice,
-      unshift          = ArrayProto.unshift,
+  var push             = ArrayProto.push,
+      slice            = ArrayProto.slice,
+      concat           = ArrayProto.concat,
       toString         = ObjProto.toString,
       hasOwnProperty   = ObjProto.hasOwnProperty;
 
@@ -14399,7 +14341,11 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     nativeBind         = FuncProto.bind;
 
   // Create a safe reference to the Underscore object for use below.
-  var _ = function(obj) { return new wrapper(obj); };
+  var _ = function(obj) {
+    if (obj instanceof _) return obj;
+    if (!(this instanceof _)) return new _(obj);
+    this._wrapped = obj;
+  };
 
   // Export the Underscore object for **Node.js**, with
   // backwards-compatibility for the old `require()` API. If we're in
@@ -14411,11 +14357,11 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     }
     exports._ = _;
   } else {
-    root['_'] = _;
+    root._ = _;
   }
 
   // Current version.
-  _.VERSION = '1.3.3';
+  _.VERSION = '1.4.4';
 
   // Collection Functions
   // --------------------
@@ -14429,7 +14375,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
       obj.forEach(iterator, context);
     } else if (obj.length === +obj.length) {
       for (var i = 0, l = obj.length; i < l; i++) {
-        if (i in obj && iterator.call(context, obj[i], i, obj) === breaker) return;
+        if (iterator.call(context, obj[i], i, obj) === breaker) return;
       }
     } else {
       for (var key in obj) {
@@ -14449,9 +14395,10 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     each(obj, function(value, index, list) {
       results[results.length] = iterator.call(context, value, index, list);
     });
-    if (obj.length === +obj.length) results.length = obj.length;
     return results;
   };
+
+  var reduceError = 'Reduce of empty array with no initial value';
 
   // **Reduce** builds up a single result from a list of values, aka `inject`,
   // or `foldl`. Delegates to **ECMAScript 5**'s native `reduce` if available.
@@ -14470,7 +14417,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
         memo = iterator.call(context, memo, value, index, list);
       }
     });
-    if (!initial) throw new TypeError('Reduce of empty array with no initial value');
+    if (!initial) throw new TypeError(reduceError);
     return memo;
   };
 
@@ -14483,9 +14430,22 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
       if (context) iterator = _.bind(iterator, context);
       return initial ? obj.reduceRight(iterator, memo) : obj.reduceRight(iterator);
     }
-    var reversed = _.toArray(obj).reverse();
-    if (context && !initial) iterator = _.bind(iterator, context);
-    return initial ? _.reduce(reversed, iterator, memo, context) : _.reduce(reversed, iterator);
+    var length = obj.length;
+    if (length !== +length) {
+      var keys = _.keys(obj);
+      length = keys.length;
+    }
+    each(obj, function(value, index, list) {
+      index = keys ? keys[--length] : --length;
+      if (!initial) {
+        memo = obj[index];
+        initial = true;
+      } else {
+        memo = iterator.call(context, memo, obj[index], index, list);
+      }
+    });
+    if (!initial) throw new TypeError(reduceError);
+    return memo;
   };
 
   // Return the first value which passes a truth test. Aliased as `detect`.
@@ -14515,18 +14475,16 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Return all the elements for which a truth test fails.
   _.reject = function(obj, iterator, context) {
-    var results = [];
-    if (obj == null) return results;
-    each(obj, function(value, index, list) {
-      if (!iterator.call(context, value, index, list)) results[results.length] = value;
-    });
-    return results;
+    return _.filter(obj, function(value, index, list) {
+      return !iterator.call(context, value, index, list);
+    }, context);
   };
 
   // Determine whether all of the elements match a truth test.
   // Delegates to **ECMAScript 5**'s native `every` if available.
   // Aliased as `all`.
   _.every = _.all = function(obj, iterator, context) {
+    iterator || (iterator = _.identity);
     var result = true;
     if (obj == null) return result;
     if (nativeEvery && obj.every === nativeEvery) return obj.every(iterator, context);
@@ -14550,23 +14508,22 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return !!result;
   };
 
-  // Determine if a given value is included in the array or object using `===`.
-  // Aliased as `contains`.
-  _.include = _.contains = function(obj, target) {
-    var found = false;
-    if (obj == null) return found;
+  // Determine if the array or object contains a given value (using `===`).
+  // Aliased as `include`.
+  _.contains = _.include = function(obj, target) {
+    if (obj == null) return false;
     if (nativeIndexOf && obj.indexOf === nativeIndexOf) return obj.indexOf(target) != -1;
-    found = any(obj, function(value) {
+    return any(obj, function(value) {
       return value === target;
     });
-    return found;
   };
 
   // Invoke a method (with arguments) on every item in a collection.
   _.invoke = function(obj, method) {
     var args = slice.call(arguments, 2);
+    var isFunc = _.isFunction(method);
     return _.map(obj, function(value) {
-      return (_.isFunction(method) ? method || value : value[method]).apply(value, args);
+      return (isFunc ? method : value[method]).apply(value, args);
     });
   };
 
@@ -14575,11 +14532,33 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return _.map(obj, function(value){ return value[key]; });
   };
 
+  // Convenience version of a common use case of `filter`: selecting only objects
+  // containing specific `key:value` pairs.
+  _.where = function(obj, attrs, first) {
+    if (_.isEmpty(attrs)) return first ? null : [];
+    return _[first ? 'find' : 'filter'](obj, function(value) {
+      for (var key in attrs) {
+        if (attrs[key] !== value[key]) return false;
+      }
+      return true;
+    });
+  };
+
+  // Convenience version of a common use case of `find`: getting the first object
+  // containing specific `key:value` pairs.
+  _.findWhere = function(obj, attrs) {
+    return _.where(obj, attrs, true);
+  };
+
   // Return the maximum element or (element-based computation).
+  // Can't optimize arrays of integers longer than 65,535 elements.
+  // See: https://bugs.webkit.org/show_bug.cgi?id=80797
   _.max = function(obj, iterator, context) {
-    if (!iterator && _.isArray(obj) && obj[0] === +obj[0]) return Math.max.apply(Math, obj);
+    if (!iterator && _.isArray(obj) && obj[0] === +obj[0] && obj.length < 65535) {
+      return Math.max.apply(Math, obj);
+    }
     if (!iterator && _.isEmpty(obj)) return -Infinity;
-    var result = {computed : -Infinity};
+    var result = {computed : -Infinity, value: -Infinity};
     each(obj, function(value, index, list) {
       var computed = iterator ? iterator.call(context, value, index, list) : value;
       computed >= result.computed && (result = {value : value, computed : computed});
@@ -14589,9 +14568,11 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Return the minimum element (or element-based computation).
   _.min = function(obj, iterator, context) {
-    if (!iterator && _.isArray(obj) && obj[0] === +obj[0]) return Math.min.apply(Math, obj);
+    if (!iterator && _.isArray(obj) && obj[0] === +obj[0] && obj.length < 65535) {
+      return Math.min.apply(Math, obj);
+    }
     if (!iterator && _.isEmpty(obj)) return Infinity;
-    var result = {computed : Infinity};
+    var result = {computed : Infinity, value: Infinity};
     each(obj, function(value, index, list) {
       var computed = iterator ? iterator.call(context, value, index, list) : value;
       computed < result.computed && (result = {value : value, computed : computed});
@@ -14601,67 +14582,96 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Shuffle an array.
   _.shuffle = function(obj) {
-    var shuffled = [], rand;
-    each(obj, function(value, index, list) {
-      rand = Math.floor(Math.random() * (index + 1));
-      shuffled[index] = shuffled[rand];
+    var rand;
+    var index = 0;
+    var shuffled = [];
+    each(obj, function(value) {
+      rand = _.random(index++);
+      shuffled[index - 1] = shuffled[rand];
       shuffled[rand] = value;
     });
     return shuffled;
   };
 
+  // An internal function to generate lookup iterators.
+  var lookupIterator = function(value) {
+    return _.isFunction(value) ? value : function(obj){ return obj[value]; };
+  };
+
   // Sort the object's values by a criterion produced by an iterator.
-  _.sortBy = function(obj, val, context) {
-    var iterator = _.isFunction(val) ? val : function(obj) { return obj[val]; };
+  _.sortBy = function(obj, value, context) {
+    var iterator = lookupIterator(value);
     return _.pluck(_.map(obj, function(value, index, list) {
       return {
         value : value,
+        index : index,
         criteria : iterator.call(context, value, index, list)
       };
     }).sort(function(left, right) {
-      var a = left.criteria, b = right.criteria;
-      if (a === void 0) return 1;
-      if (b === void 0) return -1;
-      return a < b ? -1 : a > b ? 1 : 0;
+      var a = left.criteria;
+      var b = right.criteria;
+      if (a !== b) {
+        if (a > b || a === void 0) return 1;
+        if (a < b || b === void 0) return -1;
+      }
+      return left.index < right.index ? -1 : 1;
     }), 'value');
   };
 
-  // Groups the object's values by a criterion. Pass either a string attribute
-  // to group by, or a function that returns the criterion.
-  _.groupBy = function(obj, val) {
+  // An internal function used for aggregate "group by" operations.
+  var group = function(obj, value, context, behavior) {
     var result = {};
-    var iterator = _.isFunction(val) ? val : function(obj) { return obj[val]; };
+    var iterator = lookupIterator(value || _.identity);
     each(obj, function(value, index) {
-      var key = iterator(value, index);
-      (result[key] || (result[key] = [])).push(value);
+      var key = iterator.call(context, value, index, obj);
+      behavior(result, key, value);
     });
     return result;
   };
 
-  // Use a comparator function to figure out at what index an object should
-  // be inserted so as to maintain order. Uses binary search.
-  _.sortedIndex = function(array, obj, iterator) {
-    iterator || (iterator = _.identity);
+  // Groups the object's values by a criterion. Pass either a string attribute
+  // to group by, or a function that returns the criterion.
+  _.groupBy = function(obj, value, context) {
+    return group(obj, value, context, function(result, key, value) {
+      (_.has(result, key) ? result[key] : (result[key] = [])).push(value);
+    });
+  };
+
+  // Counts instances of an object that group by a certain criterion. Pass
+  // either a string attribute to count by, or a function that returns the
+  // criterion.
+  _.countBy = function(obj, value, context) {
+    return group(obj, value, context, function(result, key) {
+      if (!_.has(result, key)) result[key] = 0;
+      result[key]++;
+    });
+  };
+
+  // Use a comparator function to figure out the smallest index at which
+  // an object should be inserted so as to maintain order. Uses binary search.
+  _.sortedIndex = function(array, obj, iterator, context) {
+    iterator = iterator == null ? _.identity : lookupIterator(iterator);
+    var value = iterator.call(context, obj);
     var low = 0, high = array.length;
     while (low < high) {
-      var mid = (low + high) >> 1;
-      iterator(array[mid]) < iterator(obj) ? low = mid + 1 : high = mid;
+      var mid = (low + high) >>> 1;
+      iterator.call(context, array[mid]) < value ? low = mid + 1 : high = mid;
     }
     return low;
   };
 
   // Safely convert anything iterable into a real, live array.
   _.toArray = function(obj) {
-    if (!obj)                                     return [];
-    if (_.isArray(obj))                           return slice.call(obj);
-    if (_.isArguments(obj))                       return slice.call(obj);
-    if (obj.toArray && _.isFunction(obj.toArray)) return obj.toArray();
+    if (!obj) return [];
+    if (_.isArray(obj)) return slice.call(obj);
+    if (obj.length === +obj.length) return _.map(obj, _.identity);
     return _.values(obj);
   };
 
   // Return the number of elements in an object.
   _.size = function(obj) {
-    return _.isArray(obj) ? obj.length : _.keys(obj).length;
+    if (obj == null) return 0;
+    return (obj.length === +obj.length) ? obj.length : _.keys(obj).length;
   };
 
   // Array Functions
@@ -14671,10 +14681,11 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // values in the array. Aliased as `head` and `take`. The **guard** check
   // allows it to work with `_.map`.
   _.first = _.head = _.take = function(array, n, guard) {
+    if (array == null) return void 0;
     return (n != null) && !guard ? slice.call(array, 0, n) : array[0];
   };
 
-  // Returns everything but the last entry of the array. Especcialy useful on
+  // Returns everything but the last entry of the array. Especially useful on
   // the arguments object. Passing **n** will return all the values in
   // the array, excluding the last N. The **guard** check allows it to work with
   // `_.map`.
@@ -14685,6 +14696,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Get the last element of an array. Passing **n** will return the last N
   // values in the array. The **guard** check allows it to work with `_.map`.
   _.last = function(array, n, guard) {
+    if (array == null) return void 0;
     if ((n != null) && !guard) {
       return slice.call(array, Math.max(array.length - n, 0));
     } else {
@@ -14692,26 +14704,34 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     }
   };
 
-  // Returns everything but the first entry of the array. Aliased as `tail`.
-  // Especially useful on the arguments object. Passing an **index** will return
-  // the rest of the values in the array from that index onward. The **guard**
+  // Returns everything but the first entry of the array. Aliased as `tail` and `drop`.
+  // Especially useful on the arguments object. Passing an **n** will return
+  // the rest N values in the array. The **guard**
   // check allows it to work with `_.map`.
-  _.rest = _.tail = function(array, index, guard) {
-    return slice.call(array, (index == null) || guard ? 1 : index);
+  _.rest = _.tail = _.drop = function(array, n, guard) {
+    return slice.call(array, (n == null) || guard ? 1 : n);
   };
 
   // Trim out all falsy values from an array.
   _.compact = function(array) {
-    return _.filter(array, function(value){ return !!value; });
+    return _.filter(array, _.identity);
+  };
+
+  // Internal implementation of a recursive `flatten` function.
+  var flatten = function(input, shallow, output) {
+    each(input, function(value) {
+      if (_.isArray(value)) {
+        shallow ? push.apply(output, value) : flatten(value, shallow, output);
+      } else {
+        output.push(value);
+      }
+    });
+    return output;
   };
 
   // Return a completely flattened version of an array.
   _.flatten = function(array, shallow) {
-    return _.reduce(array, function(memo, value) {
-      if (_.isArray(value)) return memo.concat(shallow ? value : _.flatten(value));
-      memo[memo.length] = value;
-      return memo;
-    }, []);
+    return flatten(array, shallow, []);
   };
 
   // Return a version of the array that does not contain the specified value(s).
@@ -14722,30 +14742,33 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Produce a duplicate-free version of the array. If the array has already
   // been sorted, you have the option of using a faster algorithm.
   // Aliased as `unique`.
-  _.uniq = _.unique = function(array, isSorted, iterator) {
-    var initial = iterator ? _.map(array, iterator) : array;
+  _.uniq = _.unique = function(array, isSorted, iterator, context) {
+    if (_.isFunction(isSorted)) {
+      context = iterator;
+      iterator = isSorted;
+      isSorted = false;
+    }
+    var initial = iterator ? _.map(array, iterator, context) : array;
     var results = [];
-    // The `isSorted` flag is irrelevant if the array only contains two elements.
-    if (array.length < 3) isSorted = true;
-    _.reduce(initial, function (memo, value, index) {
-      if (isSorted ? _.last(memo) !== value || !memo.length : !_.include(memo, value)) {
-        memo.push(value);
+    var seen = [];
+    each(initial, function(value, index) {
+      if (isSorted ? (!index || seen[seen.length - 1] !== value) : !_.contains(seen, value)) {
+        seen.push(value);
         results.push(array[index]);
       }
-      return memo;
-    }, []);
+    });
     return results;
   };
 
   // Produce an array that contains the union: each distinct element from all of
   // the passed-in arrays.
   _.union = function() {
-    return _.uniq(_.flatten(arguments, true));
+    return _.uniq(concat.apply(ArrayProto, arguments));
   };
 
   // Produce an array that contains every item shared between all the
-  // passed-in arrays. (Aliased as "intersect" for back-compat.)
-  _.intersection = _.intersect = function(array) {
+  // passed-in arrays.
+  _.intersection = function(array) {
     var rest = slice.call(arguments, 1);
     return _.filter(_.uniq(array), function(item) {
       return _.every(rest, function(other) {
@@ -14757,8 +14780,8 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Take the difference between one array and a number of other arrays.
   // Only the elements present in just the first array will remain.
   _.difference = function(array) {
-    var rest = _.flatten(slice.call(arguments, 1), true);
-    return _.filter(array, function(value){ return !_.include(rest, value); });
+    var rest = concat.apply(ArrayProto, slice.call(arguments, 1));
+    return _.filter(array, function(value){ return !_.contains(rest, value); });
   };
 
   // Zip together multiple lists into a single array -- elements that share
@@ -14767,8 +14790,26 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     var args = slice.call(arguments);
     var length = _.max(_.pluck(args, 'length'));
     var results = new Array(length);
-    for (var i = 0; i < length; i++) results[i] = _.pluck(args, "" + i);
+    for (var i = 0; i < length; i++) {
+      results[i] = _.pluck(args, "" + i);
+    }
     return results;
+  };
+
+  // Converts lists into objects. Pass either a single array of `[key, value]`
+  // pairs, or two parallel arrays of the same length -- one of keys, and one of
+  // the corresponding values.
+  _.object = function(list, values) {
+    if (list == null) return {};
+    var result = {};
+    for (var i = 0, l = list.length; i < l; i++) {
+      if (values) {
+        result[list[i]] = values[i];
+      } else {
+        result[list[i][0]] = list[i][1];
+      }
+    }
+    return result;
   };
 
   // If the browser doesn't supply us with indexOf (I'm looking at you, **MSIE**),
@@ -14779,22 +14820,29 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // for **isSorted** to use binary search.
   _.indexOf = function(array, item, isSorted) {
     if (array == null) return -1;
-    var i, l;
+    var i = 0, l = array.length;
     if (isSorted) {
-      i = _.sortedIndex(array, item);
-      return array[i] === item ? i : -1;
+      if (typeof isSorted == 'number') {
+        i = (isSorted < 0 ? Math.max(0, l + isSorted) : isSorted);
+      } else {
+        i = _.sortedIndex(array, item);
+        return array[i] === item ? i : -1;
+      }
     }
-    if (nativeIndexOf && array.indexOf === nativeIndexOf) return array.indexOf(item);
-    for (i = 0, l = array.length; i < l; i++) if (i in array && array[i] === item) return i;
+    if (nativeIndexOf && array.indexOf === nativeIndexOf) return array.indexOf(item, isSorted);
+    for (; i < l; i++) if (array[i] === item) return i;
     return -1;
   };
 
   // Delegates to **ECMAScript 5**'s native `lastIndexOf` if available.
-  _.lastIndexOf = function(array, item) {
+  _.lastIndexOf = function(array, item, from) {
     if (array == null) return -1;
-    if (nativeLastIndexOf && array.lastIndexOf === nativeLastIndexOf) return array.lastIndexOf(item);
-    var i = array.length;
-    while (i--) if (i in array && array[i] === item) return i;
+    var hasIndex = from != null;
+    if (nativeLastIndexOf && array.lastIndexOf === nativeLastIndexOf) {
+      return hasIndex ? array.lastIndexOf(item, from) : array.lastIndexOf(item);
+    }
+    var i = (hasIndex ? from : array.length);
+    while (i--) if (array[i] === item) return i;
     return -1;
   };
 
@@ -14823,25 +14871,23 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Function (ahem) Functions
   // ------------------
 
-  // Reusable constructor function for prototype setting.
-  var ctor = function(){};
-
   // Create a function bound to a given object (assigning `this`, and arguments,
-  // optionally). Binding with arguments is also known as `curry`.
-  // Delegates to **ECMAScript 5**'s native `Function.bind` if available.
-  // We check for `func.bind` first, to fail fast when `func` is undefined.
-  _.bind = function bind(func, context) {
-    var bound, args;
+  // optionally). Delegates to **ECMAScript 5**'s native `Function.bind` if
+  // available.
+  _.bind = function(func, context) {
     if (func.bind === nativeBind && nativeBind) return nativeBind.apply(func, slice.call(arguments, 1));
-    if (!_.isFunction(func)) throw new TypeError;
-    args = slice.call(arguments, 2);
-    return bound = function() {
-      if (!(this instanceof bound)) return func.apply(context, args.concat(slice.call(arguments)));
-      ctor.prototype = func.prototype;
-      var self = new ctor;
-      var result = func.apply(self, args.concat(slice.call(arguments)));
-      if (Object(result) === result) return result;
-      return self;
+    var args = slice.call(arguments, 2);
+    return function() {
+      return func.apply(context, args.concat(slice.call(arguments)));
+    };
+  };
+
+  // Partially apply a function by creating a version that has had some of its
+  // arguments pre-filled, without changing its dynamic `this` context.
+  _.partial = function(func) {
+    var args = slice.call(arguments, 1);
+    return function() {
+      return func.apply(this, args.concat(slice.call(arguments)));
     };
   };
 
@@ -14849,7 +14895,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // all callbacks defined on an object belong to it.
   _.bindAll = function(obj) {
     var funcs = slice.call(arguments, 1);
-    if (funcs.length == 0) funcs = _.functions(obj);
+    if (funcs.length === 0) funcs = _.functions(obj);
     each(funcs, function(f) { obj[f] = _.bind(obj[f], obj); });
     return obj;
   };
@@ -14880,23 +14926,26 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Returns a function, that, when invoked, will only be triggered at most once
   // during a given window of time.
   _.throttle = function(func, wait) {
-    var context, args, timeout, throttling, more, result;
-    var whenDone = _.debounce(function(){ more = throttling = false; }, wait);
+    var context, args, timeout, result;
+    var previous = 0;
+    var later = function() {
+      previous = new Date;
+      timeout = null;
+      result = func.apply(context, args);
+    };
     return function() {
-      context = this; args = arguments;
-      var later = function() {
+      var now = new Date;
+      var remaining = wait - (now - previous);
+      context = this;
+      args = arguments;
+      if (remaining <= 0) {
+        clearTimeout(timeout);
         timeout = null;
-        if (more) func.apply(context, args);
-        whenDone();
-      };
-      if (!timeout) timeout = setTimeout(later, wait);
-      if (throttling) {
-        more = true;
-      } else {
+        previous = now;
         result = func.apply(context, args);
+      } else if (!timeout) {
+        timeout = setTimeout(later, remaining);
       }
-      whenDone();
-      throttling = true;
       return result;
     };
   };
@@ -14906,16 +14955,18 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // N milliseconds. If `immediate` is passed, trigger the function on the
   // leading edge, instead of the trailing.
   _.debounce = function(func, wait, immediate) {
-    var timeout;
+    var timeout, result;
     return function() {
       var context = this, args = arguments;
       var later = function() {
         timeout = null;
-        if (!immediate) func.apply(context, args);
+        if (!immediate) result = func.apply(context, args);
       };
-      if (immediate && !timeout) func.apply(context, args);
+      var callNow = immediate && !timeout;
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
+      if (callNow) result = func.apply(context, args);
+      return result;
     };
   };
 
@@ -14926,7 +14977,9 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return function() {
       if (ran) return memo;
       ran = true;
-      return memo = func.apply(this, arguments);
+      memo = func.apply(this, arguments);
+      func = null;
+      return memo;
     };
   };
 
@@ -14935,7 +14988,8 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // conditionally execute the original function.
   _.wrap = function(func, wrapper) {
     return function() {
-      var args = [func].concat(slice.call(arguments, 0));
+      var args = [func];
+      push.apply(args, arguments);
       return wrapper.apply(this, args);
     };
   };
@@ -14957,7 +15011,9 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   _.after = function(times, func) {
     if (times <= 0) return func();
     return function() {
-      if (--times < 1) { return func.apply(this, arguments); }
+      if (--times < 1) {
+        return func.apply(this, arguments);
+      }
     };
   };
 
@@ -14975,7 +15031,23 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Retrieve the values of an object's properties.
   _.values = function(obj) {
-    return _.map(obj, _.identity);
+    var values = [];
+    for (var key in obj) if (_.has(obj, key)) values.push(obj[key]);
+    return values;
+  };
+
+  // Convert an object into a list of `[key, value]` pairs.
+  _.pairs = function(obj) {
+    var pairs = [];
+    for (var key in obj) if (_.has(obj, key)) pairs.push([key, obj[key]]);
+    return pairs;
+  };
+
+  // Invert the keys and values of an object. The values must be serializable.
+  _.invert = function(obj) {
+    var result = {};
+    for (var key in obj) if (_.has(obj, key)) result[obj[key]] = key;
+    return result;
   };
 
   // Return a sorted list of the function names available on the object.
@@ -14991,8 +15063,10 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Extend a given object with all the properties in passed-in object(s).
   _.extend = function(obj) {
     each(slice.call(arguments, 1), function(source) {
-      for (var prop in source) {
-        obj[prop] = source[prop];
+      if (source) {
+        for (var prop in source) {
+          obj[prop] = source[prop];
+        }
       }
     });
     return obj;
@@ -15000,18 +15074,31 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Return a copy of the object only containing the whitelisted properties.
   _.pick = function(obj) {
-    var result = {};
-    each(_.flatten(slice.call(arguments, 1)), function(key) {
-      if (key in obj) result[key] = obj[key];
+    var copy = {};
+    var keys = concat.apply(ArrayProto, slice.call(arguments, 1));
+    each(keys, function(key) {
+      if (key in obj) copy[key] = obj[key];
     });
-    return result;
+    return copy;
+  };
+
+   // Return a copy of the object without the blacklisted properties.
+  _.omit = function(obj) {
+    var copy = {};
+    var keys = concat.apply(ArrayProto, slice.call(arguments, 1));
+    for (var key in obj) {
+      if (!_.contains(keys, key)) copy[key] = obj[key];
+    }
+    return copy;
   };
 
   // Fill in a given object with default properties.
   _.defaults = function(obj) {
     each(slice.call(arguments, 1), function(source) {
-      for (var prop in source) {
-        if (obj[prop] == null) obj[prop] = source[prop];
+      if (source) {
+        for (var prop in source) {
+          if (obj[prop] == null) obj[prop] = source[prop];
+        }
       }
     });
     return obj;
@@ -15031,19 +15118,16 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return obj;
   };
 
-  // Internal recursive comparison function.
-  function eq(a, b, stack) {
+  // Internal recursive comparison function for `isEqual`.
+  var eq = function(a, b, aStack, bStack) {
     // Identical objects are equal. `0 === -0`, but they aren't identical.
     // See the Harmony `egal` proposal: http://wiki.ecmascript.org/doku.php?id=harmony:egal.
     if (a === b) return a !== 0 || 1 / a == 1 / b;
     // A strict comparison is necessary because `null == undefined`.
     if (a == null || b == null) return a === b;
     // Unwrap any wrapped objects.
-    if (a._chain) a = a._wrapped;
-    if (b._chain) b = b._wrapped;
-    // Invoke a custom `isEqual` method if one is provided.
-    if (a.isEqual && _.isFunction(a.isEqual)) return a.isEqual(b);
-    if (b.isEqual && _.isFunction(b.isEqual)) return b.isEqual(a);
+    if (a instanceof _) a = a._wrapped;
+    if (b instanceof _) b = b._wrapped;
     // Compare `[[Class]]` names.
     var className = toString.call(a);
     if (className != toString.call(b)) return false;
@@ -15073,14 +15157,15 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     if (typeof a != 'object' || typeof b != 'object') return false;
     // Assume equality for cyclic structures. The algorithm for detecting cyclic
     // structures is adapted from ES 5.1 section 15.12.3, abstract operation `JO`.
-    var length = stack.length;
+    var length = aStack.length;
     while (length--) {
       // Linear search. Performance is inversely proportional to the number of
       // unique nested structures.
-      if (stack[length] == a) return true;
+      if (aStack[length] == a) return bStack[length] == b;
     }
     // Add the first object to the stack of traversed objects.
-    stack.push(a);
+    aStack.push(a);
+    bStack.push(b);
     var size = 0, result = true;
     // Recursively compare objects and arrays.
     if (className == '[object Array]') {
@@ -15090,20 +15175,24 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
       if (result) {
         // Deep compare the contents, ignoring non-numeric properties.
         while (size--) {
-          // Ensure commutative equality for sparse arrays.
-          if (!(result = size in a == size in b && eq(a[size], b[size], stack))) break;
+          if (!(result = eq(a[size], b[size], aStack, bStack))) break;
         }
       }
     } else {
-      // Objects with different constructors are not equivalent.
-      if ('constructor' in a != 'constructor' in b || a.constructor != b.constructor) return false;
+      // Objects with different constructors are not equivalent, but `Object`s
+      // from different frames are.
+      var aCtor = a.constructor, bCtor = b.constructor;
+      if (aCtor !== bCtor && !(_.isFunction(aCtor) && (aCtor instanceof aCtor) &&
+                               _.isFunction(bCtor) && (bCtor instanceof bCtor))) {
+        return false;
+      }
       // Deep compare objects.
       for (var key in a) {
         if (_.has(a, key)) {
           // Count the expected number of properties.
           size++;
           // Deep compare each member.
-          if (!(result = _.has(b, key) && eq(a[key], b[key], stack))) break;
+          if (!(result = _.has(b, key) && eq(a[key], b[key], aStack, bStack))) break;
         }
       }
       // Ensure that both objects contain the same number of properties.
@@ -15115,13 +15204,14 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
       }
     }
     // Remove the first object from the stack of traversed objects.
-    stack.pop();
+    aStack.pop();
+    bStack.pop();
     return result;
-  }
+  };
 
   // Perform a deep comparison to check if two objects are equal.
   _.isEqual = function(a, b) {
-    return eq(a, b, []);
+    return eq(a, b, [], []);
   };
 
   // Is a given array, string, or object empty?
@@ -15135,7 +15225,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
 
   // Is a given value a DOM element?
   _.isElement = function(obj) {
-    return !!(obj && obj.nodeType == 1);
+    return !!(obj && obj.nodeType === 1);
   };
 
   // Is a given value an array?
@@ -15149,55 +15239,41 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return obj === Object(obj);
   };
 
-  // Is a given variable an arguments object?
-  _.isArguments = function(obj) {
-    return toString.call(obj) == '[object Arguments]';
-  };
+  // Add some isType methods: isArguments, isFunction, isString, isNumber, isDate, isRegExp.
+  each(['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp'], function(name) {
+    _['is' + name] = function(obj) {
+      return toString.call(obj) == '[object ' + name + ']';
+    };
+  });
+
+  // Define a fallback version of the method in browsers (ahem, IE), where
+  // there isn't any inspectable "Arguments" type.
   if (!_.isArguments(arguments)) {
     _.isArguments = function(obj) {
       return !!(obj && _.has(obj, 'callee'));
     };
   }
 
-  // Is a given value a function?
-  _.isFunction = function(obj) {
-    return toString.call(obj) == '[object Function]';
-  };
-
-  // Is a given value a string?
-  _.isString = function(obj) {
-    return toString.call(obj) == '[object String]';
-  };
-
-  // Is a given value a number?
-  _.isNumber = function(obj) {
-    return toString.call(obj) == '[object Number]';
-  };
+  // Optimize `isFunction` if appropriate.
+  if (typeof (/./) !== 'function') {
+    _.isFunction = function(obj) {
+      return typeof obj === 'function';
+    };
+  }
 
   // Is a given object a finite number?
   _.isFinite = function(obj) {
-    return _.isNumber(obj) && isFinite(obj);
+    return isFinite(obj) && !isNaN(parseFloat(obj));
   };
 
-  // Is the given value `NaN`?
+  // Is the given value `NaN`? (NaN is the only number which does not equal itself).
   _.isNaN = function(obj) {
-    // `NaN` is the only value for which `===` is not reflexive.
-    return obj !== obj;
+    return _.isNumber(obj) && obj != +obj;
   };
 
   // Is a given value a boolean?
   _.isBoolean = function(obj) {
     return obj === true || obj === false || toString.call(obj) == '[object Boolean]';
-  };
-
-  // Is a given value a date?
-  _.isDate = function(obj) {
-    return toString.call(obj) == '[object Date]';
-  };
-
-  // Is the given value a regular expression?
-  _.isRegExp = function(obj) {
-    return toString.call(obj) == '[object RegExp]';
   };
 
   // Is a given value equal to null?
@@ -15210,7 +15286,8 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return obj === void 0;
   };
 
-  // Has own property?
+  // Shortcut function for checking if an object has a given property directly
+  // on itself (in other words, not on a prototype).
   _.has = function(obj, key) {
     return hasOwnProperty.call(obj, key);
   };
@@ -15231,14 +15308,49 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   };
 
   // Run a function **n** times.
-  _.times = function (n, iterator, context) {
-    for (var i = 0; i < n; i++) iterator.call(context, i);
+  _.times = function(n, iterator, context) {
+    var accum = Array(n);
+    for (var i = 0; i < n; i++) accum[i] = iterator.call(context, i);
+    return accum;
   };
 
-  // Escape a string for HTML interpolation.
-  _.escape = function(string) {
-    return (''+string).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;').replace(/\//g,'&#x2F;');
+  // Return a random integer between min and max (inclusive).
+  _.random = function(min, max) {
+    if (max == null) {
+      max = min;
+      min = 0;
+    }
+    return min + Math.floor(Math.random() * (max - min + 1));
   };
+
+  // List of HTML entities for escaping.
+  var entityMap = {
+    escape: {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#x27;',
+      '/': '&#x2F;'
+    }
+  };
+  entityMap.unescape = _.invert(entityMap.escape);
+
+  // Regexes containing the keys and values listed immediately above.
+  var entityRegexes = {
+    escape:   new RegExp('[' + _.keys(entityMap.escape).join('') + ']', 'g'),
+    unescape: new RegExp('(' + _.keys(entityMap.unescape).join('|') + ')', 'g')
+  };
+
+  // Functions for escaping and unescaping strings to/from HTML interpolation.
+  _.each(['escape', 'unescape'], function(method) {
+    _[method] = function(string) {
+      if (string == null) return '';
+      return ('' + string).replace(entityRegexes[method], function(match) {
+        return entityMap[method][match];
+      });
+    };
+  });
 
   // If the value of the named property is a function then invoke it;
   // otherwise, return it.
@@ -15248,11 +15360,15 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return _.isFunction(value) ? value.call(object) : value;
   };
 
-  // Add your own custom functions to the Underscore object, ensuring that
-  // they're correctly added to the OOP wrapper as well.
+  // Add your own custom functions to the Underscore object.
   _.mixin = function(obj) {
     each(_.functions(obj), function(name){
-      addToWrapper(name, _[name] = obj[name]);
+      var func = _[name] = obj[name];
+      _.prototype[name] = function() {
+        var args = [this._wrapped];
+        push.apply(args, arguments);
+        return result.call(this, func.apply(_, args));
+      };
     });
   };
 
@@ -15260,7 +15376,7 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Useful for temporary DOM ids.
   var idCounter = 0;
   _.uniqueId = function(prefix) {
-    var id = idCounter++;
+    var id = ++idCounter + '';
     return prefix ? prefix + id : id;
   };
 
@@ -15275,72 +15391,78 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // When customizing `templateSettings`, if you don't want to define an
   // interpolation, evaluation or escaping regex, we need one that is
   // guaranteed not to match.
-  var noMatch = /.^/;
+  var noMatch = /(.)^/;
 
   // Certain characters need to be escaped so that they can be put into a
   // string literal.
   var escapes = {
-    '\\': '\\',
-    "'": "'",
-    'r': '\r',
-    'n': '\n',
-    't': '\t',
-    'u2028': '\u2028',
-    'u2029': '\u2029'
+    "'":      "'",
+    '\\':     '\\',
+    '\r':     'r',
+    '\n':     'n',
+    '\t':     't',
+    '\u2028': 'u2028',
+    '\u2029': 'u2029'
   };
 
-  for (var p in escapes) escapes[escapes[p]] = p;
   var escaper = /\\|'|\r|\n|\t|\u2028|\u2029/g;
-  var unescaper = /\\(\\|'|r|n|t|u2028|u2029)/g;
-
-  // Within an interpolation, evaluation, or escaping, remove HTML escaping
-  // that had been previously added.
-  var unescape = function(code) {
-    return code.replace(unescaper, function(match, escape) {
-      return escapes[escape];
-    });
-  };
 
   // JavaScript micro-templating, similar to John Resig's implementation.
   // Underscore templating handles arbitrary delimiters, preserves whitespace,
   // and correctly escapes quotes within interpolated code.
   _.template = function(text, data, settings) {
-    settings = _.defaults(settings || {}, _.templateSettings);
+    var render;
+    settings = _.defaults({}, settings, _.templateSettings);
 
-    // Compile the template source, taking care to escape characters that
-    // cannot be included in a string literal and then unescape them in code
-    // blocks.
-    var source = "__p+='" + text
-      .replace(escaper, function(match) {
-        return '\\' + escapes[match];
-      })
-      .replace(settings.escape || noMatch, function(match, code) {
-        return "'+\n_.escape(" + unescape(code) + ")+\n'";
-      })
-      .replace(settings.interpolate || noMatch, function(match, code) {
-        return "'+\n(" + unescape(code) + ")+\n'";
-      })
-      .replace(settings.evaluate || noMatch, function(match, code) {
-        return "';\n" + unescape(code) + "\n;__p+='";
-      }) + "';\n";
+    // Combine delimiters into one regular expression via alternation.
+    var matcher = new RegExp([
+      (settings.escape || noMatch).source,
+      (settings.interpolate || noMatch).source,
+      (settings.evaluate || noMatch).source
+    ].join('|') + '|$', 'g');
+
+    // Compile the template source, escaping string literals appropriately.
+    var index = 0;
+    var source = "__p+='";
+    text.replace(matcher, function(match, escape, interpolate, evaluate, offset) {
+      source += text.slice(index, offset)
+        .replace(escaper, function(match) { return '\\' + escapes[match]; });
+
+      if (escape) {
+        source += "'+\n((__t=(" + escape + "))==null?'':_.escape(__t))+\n'";
+      }
+      if (interpolate) {
+        source += "'+\n((__t=(" + interpolate + "))==null?'':__t)+\n'";
+      }
+      if (evaluate) {
+        source += "';\n" + evaluate + "\n__p+='";
+      }
+      index = offset + match.length;
+      return match;
+    });
+    source += "';\n";
 
     // If a variable is not specified, place data values in local scope.
     if (!settings.variable) source = 'with(obj||{}){\n' + source + '}\n';
 
-    source = "var __p='';" +
-      "var print=function(){__p+=Array.prototype.join.call(arguments, '')};\n" +
+    source = "var __t,__p='',__j=Array.prototype.join," +
+      "print=function(){__p+=__j.call(arguments,'');};\n" +
       source + "return __p;\n";
 
-    var render = new Function(settings.variable || 'obj', '_', source);
+    try {
+      render = new Function(settings.variable || 'obj', '_', source);
+    } catch (e) {
+      e.source = source;
+      throw e;
+    }
+
     if (data) return render(data, _);
     var template = function(data) {
       return render.call(this, data, _);
     };
 
-    // Provide the compiled function source as a convenience for build time
-    // precompilation.
-    template.source = 'function(' + (settings.variable || 'obj') + '){\n' +
-      source + '}';
+    // Provide the compiled function source as a convenience for precompilation.
+    template.source = 'function(' + (settings.variable || 'obj') + '){\n' + source + '}';
 
     return template;
   };
@@ -15350,29 +15472,15 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
     return _(obj).chain();
   };
 
-  // The OOP Wrapper
+  // OOP
   // ---------------
-
   // If Underscore is called as a function, it returns a wrapped object that
   // can be used OO-style. This wrapper holds altered versions of all the
   // underscore functions. Wrapped objects may be chained.
-  var wrapper = function(obj) { this._wrapped = obj; };
-
-  // Expose `wrapper.prototype` as `_.prototype`
-  _.prototype = wrapper.prototype;
 
   // Helper function to continue chaining intermediate results.
-  var result = function(obj, chain) {
-    return chain ? _(obj).chain() : obj;
-  };
-
-  // A method to easily add functions to the OOP wrapper.
-  var addToWrapper = function(name, func) {
-    wrapper.prototype[name] = function() {
-      var args = slice.call(arguments);
-      unshift.call(args, this._wrapped);
-      return result(func.apply(_, args), this._chain);
-    };
+  var result = function(obj) {
+    return this._chain ? _(obj).chain() : obj;
   };
 
   // Add all of the Underscore functions to the wrapper object.
@@ -15381,40 +15489,45 @@ require.define("/node_modules/backbone-browserify/node_modules/underscore/unders
   // Add all mutator Array functions to the wrapper.
   each(['pop', 'push', 'reverse', 'shift', 'sort', 'splice', 'unshift'], function(name) {
     var method = ArrayProto[name];
-    wrapper.prototype[name] = function() {
-      var wrapped = this._wrapped;
-      method.apply(wrapped, arguments);
-      var length = wrapped.length;
-      if ((name == 'shift' || name == 'splice') && length === 0) delete wrapped[0];
-      return result(wrapped, this._chain);
+    _.prototype[name] = function() {
+      var obj = this._wrapped;
+      method.apply(obj, arguments);
+      if ((name == 'shift' || name == 'splice') && obj.length === 0) delete obj[0];
+      return result.call(this, obj);
     };
   });
 
   // Add all accessor Array functions to the wrapper.
   each(['concat', 'join', 'slice'], function(name) {
     var method = ArrayProto[name];
-    wrapper.prototype[name] = function() {
-      return result(method.apply(this._wrapped, arguments), this._chain);
+    _.prototype[name] = function() {
+      return result.call(this, method.apply(this._wrapped, arguments));
     };
   });
 
-  // Start chaining a wrapped Underscore object.
-  wrapper.prototype.chain = function() {
-    this._chain = true;
-    return this;
-  };
+  _.extend(_.prototype, {
 
-  // Extracts the result from a wrapped and chained object.
-  wrapper.prototype.value = function() {
-    return this._wrapped;
-  };
+    // Start chaining a wrapped Underscore object.
+    chain: function() {
+      this._chain = true;
+      return this;
+    },
+
+    // Extracts the result from a wrapped and chained object.
+    value: function() {
+      return this._wrapped;
+    }
+
+  });
 
 }).call(this);
+
 });
 
-require.define("/node_modules/tinyapp/node_modules/cuid/package.json",function(require,module,exports,__dirname,__filename,process){module.exports = {"main":"./dist/node-cuid.js","browserify":"./dist/browser-cuid.js"}});
+require.define("/node_modules/tinyapp/node_modules/cuid/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./dist/node-cuid.js","browserify":"./dist/browser-cuid.js"}
+});
 
-require.define("/node_modules/tinyapp/node_modules/cuid/dist/browser-cuid.js",function(require,module,exports,__dirname,__filename,process){/**
+require.define("/node_modules/tinyapp/node_modules/cuid/dist/browser-cuid.js",function(require,module,exports,__dirname,__filename,process,global){/**
  * cuid.js
  * Collision-resistant UID generator for browsers and node.
  * Sequential for fast db lookups and recency sorting.
@@ -15509,14 +15622,15 @@ require.define("/node_modules/tinyapp/node_modules/cuid/dist/browser-cuid.js",fu
   }
 
 }(this.applitude || this));
+
 });
 
-require.define("/src/guestlistcollection.js",function(require,module,exports,__dirname,__filename,process){var namespace = 'guestlistcollection',
-  app = require('./bootstrap'),
+require.define("/src/guestlistcollection.js",function(require,module,exports,__dirname,__filename,process,global){var app = require('./tinyapp'),
   Model = require('./guestmodel'),
-  Collection = require('backbone-browserify').Collection.extend({
-    model: Model
-  }),
+  Collection = require('backbone-browserify')
+    .Collection.extend({
+      model: Model
+    }),
 
   create = function create(models) {
     models = models || app.pageData.guestList;
@@ -15529,12 +15643,14 @@ require.define("/src/guestlistcollection.js",function(require,module,exports,__d
   };
 
 module.exports = api;
+
 });
 
-require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__filename,process){var Model = require('backbone-browserify').Model,
-  app = require('./bootstrap'),
+require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__filename,process,global){var Model = require('backbone-browserify').Model,
+  app = require('./tinyapp'),
 
   // Set the checkedIn attribute on the model.
+
   toggleCheckedIn = function toggleCheckedIn() {
     this.set('checkedIn', !this.get('checkedIn'));
   },
@@ -15542,52 +15658,67 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
   delegate = function delegate() {
     var sourceId = this.get('id');
 
-    // Listen for clicked event, sent from the view.
+    // Listen for toggled event, sent from the view.
     // sourceId is used to filter the event. The model
     // does not need to know where the event comes from --
     // only which item was clicked.
+
     app.on('toggled-checkedin', sourceId,
       toggleCheckedIn.bind(this));
 
+
     // Relay the change event so the view can listen for it
     // without knowing anything about the model.
+
     this.on('change:checkedIn', function (item) {
 
       // Send a shallow copy of the list item as the
       // message payload. Make sure the new checkedIn
       // state is easy to access.
+
       var event = app.extend({}, item, {
         sourceId: this.id,
         checkedIn: item.get('checkedIn')
       });
 
+
       // Broadcast the message on the aggregator.
-      app.trigger('changed', event);
+
+      app.trigger('changed.checkedIn', event);
     }.bind(this));  
   },
 
   // The collection expects a Backbone.Model constructor.
+
   api = Model.extend({
     initialize: delegate,
     toggleCheckedIn: toggleCheckedIn
   });
 
 module.exports = api;
+
 });
 
-require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var app = require('./bootstrap'),
-  View = require('backbone-browserify').View,
+require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process,global){var app = require('./tinyapp'),
 
+  // Assign Backbone.View to the View var.
+
+  View = require('backbone-browserify').View,
+  
   $ = app.$,
   checkedinClass = 'icon-check',
   listClass = 'dropdown-menu',
   guestClass = 'guest',
 
-  // Rebroadcast DOM click events on the app event aggregator.
+
+  // Rebroadcast DOM click events on the app event
+  // aggregator.
+
   relayClick = function relayClick(e) {
 
     // Get the ID from the element and use it to
     // namespace the event.
+
     var sourceId = $(this).attr('id'),
       event = app.extend(e, {
         sourceId: $(this).attr('id')
@@ -15598,18 +15729,23 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
 
   delegate = function delegate() {
 
-    // Delegate all click events to the ul element.
+    // Delegate all click events to the parent element.
+
     this.$el.on('click', '.' + guestClass, relayClick);
 
     // Listen for changed events from the model
     // and make sure the element reflects the current
     // state.
-    app.on('changed', function changeHandler(event) {
+
+    app.on('changed.checkedIn', function changeHandler(event) {
       var id = event.id;
 
-      // Select the right list item by id
+
+      // Select the right list item by id.
+
       this.$el.find('#' + id)
         .toggleClass(checkedinClass, event.checkedIn);
+
     }.bind(this));
   },
 
@@ -15620,6 +15756,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
 
     // Loop over the passed-in guest models and render
     // them as li elements.
+
     guestlist.forEach(function (guestModel) {
       var $guest;
       guest = guestModel.toJSON();
@@ -15643,7 +15780,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
   }),
 
   // Expose a factory function.
-  create = function create(el) {
+  create = function create() {
     return new GuestlistView();
   },
 
@@ -15652,9 +15789,10 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
   };
 
 module.exports = api;
+
 });
 
-require.define("/src/app.js",function(require,module,exports,__dirname,__filename,process){/**
+require.define("/src/app.js",function(require,module,exports,__dirname,__filename,process,global){/**
  * App.js is the entry point. It kicks off the
  * execution of all the other modules.
  */
@@ -15670,10 +15808,10 @@ var
   $ = app.$,
   $container = $('#container');
 
-(function init() {
+$(function () {
 
   var guestlist = collection.create(),
-    guestlistView = view.create(container);
+    guestlistView = view.create();
 
   // Attach it to the DOM first.
   $container.empty().append(guestlistView.$el);
@@ -15681,10 +15819,11 @@ var
   // Then call render on the view.
   guestlistView.render(guestlist);
 
-}());});
+});
+});
 require("/src/app.js");
 
-require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process){/**
+require.define("/src/bootstrap.js",function(require,module,exports,__dirname,__filename,process,global){/**
  * Add dependencies to the app sandbox, load
  * configuration and bootstrap data, and initialize the app.
  */
@@ -15713,15 +15852,16 @@ app.init({
 });
 
 module.exports = app;
+
 });
 require("/src/bootstrap.js");
 
-require.define("/src/guestlistcollection.js",function(require,module,exports,__dirname,__filename,process){var namespace = 'guestlistcollection',
-  app = require('./bootstrap'),
+require.define("/src/guestlistcollection.js",function(require,module,exports,__dirname,__filename,process,global){var app = require('./tinyapp'),
   Model = require('./guestmodel'),
-  Collection = require('backbone-browserify').Collection.extend({
-    model: Model
-  }),
+  Collection = require('backbone-browserify')
+    .Collection.extend({
+      model: Model
+    }),
 
   create = function create(models) {
     models = models || app.pageData.guestList;
@@ -15734,22 +15874,30 @@ require.define("/src/guestlistcollection.js",function(require,module,exports,__d
   };
 
 module.exports = api;
+
 });
 require("/src/guestlistcollection.js");
 
-require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process){var app = require('./bootstrap'),
-  View = require('backbone-browserify').View,
+require.define("/src/guestlistview.js",function(require,module,exports,__dirname,__filename,process,global){var app = require('./tinyapp'),
 
+  // Assign Backbone.View to the View var.
+
+  View = require('backbone-browserify').View,
+  
   $ = app.$,
   checkedinClass = 'icon-check',
   listClass = 'dropdown-menu',
   guestClass = 'guest',
 
-  // Rebroadcast DOM click events on the app event aggregator.
+
+  // Rebroadcast DOM click events on the app event
+  // aggregator.
+
   relayClick = function relayClick(e) {
 
     // Get the ID from the element and use it to
     // namespace the event.
+
     var sourceId = $(this).attr('id'),
       event = app.extend(e, {
         sourceId: $(this).attr('id')
@@ -15760,18 +15908,23 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
 
   delegate = function delegate() {
 
-    // Delegate all click events to the ul element.
+    // Delegate all click events to the parent element.
+
     this.$el.on('click', '.' + guestClass, relayClick);
 
     // Listen for changed events from the model
     // and make sure the element reflects the current
     // state.
-    app.on('changed', function changeHandler(event) {
+
+    app.on('changed.checkedIn', function changeHandler(event) {
       var id = event.id;
 
-      // Select the right list item by id
+
+      // Select the right list item by id.
+
       this.$el.find('#' + id)
         .toggleClass(checkedinClass, event.checkedIn);
+
     }.bind(this));
   },
 
@@ -15782,6 +15935,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
 
     // Loop over the passed-in guest models and render
     // them as li elements.
+
     guestlist.forEach(function (guestModel) {
       var $guest;
       guest = guestModel.toJSON();
@@ -15805,7 +15959,7 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
   }),
 
   // Expose a factory function.
-  create = function create(el) {
+  create = function create() {
     return new GuestlistView();
   },
 
@@ -15814,13 +15968,15 @@ require.define("/src/guestlistview.js",function(require,module,exports,__dirname
   };
 
 module.exports = api;
+
 });
 require("/src/guestlistview.js");
 
-require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__filename,process){var Model = require('backbone-browserify').Model,
-  app = require('./bootstrap'),
+require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__filename,process,global){var Model = require('backbone-browserify').Model,
+  app = require('./tinyapp'),
 
   // Set the checkedIn attribute on the model.
+
   toggleCheckedIn = function toggleCheckedIn() {
     this.set('checkedIn', !this.get('checkedIn'));
   },
@@ -15828,37 +15984,45 @@ require.define("/src/guestmodel.js",function(require,module,exports,__dirname,__
   delegate = function delegate() {
     var sourceId = this.get('id');
 
-    // Listen for clicked event, sent from the view.
+    // Listen for toggled event, sent from the view.
     // sourceId is used to filter the event. The model
     // does not need to know where the event comes from --
     // only which item was clicked.
+
     app.on('toggled-checkedin', sourceId,
       toggleCheckedIn.bind(this));
 
+
     // Relay the change event so the view can listen for it
     // without knowing anything about the model.
+
     this.on('change:checkedIn', function (item) {
 
       // Send a shallow copy of the list item as the
       // message payload. Make sure the new checkedIn
       // state is easy to access.
+
       var event = app.extend({}, item, {
         sourceId: this.id,
         checkedIn: item.get('checkedIn')
       });
 
+
       // Broadcast the message on the aggregator.
-      app.trigger('changed', event);
+
+      app.trigger('changed.checkedIn', event);
     }.bind(this));  
   },
 
   // The collection expects a Backbone.Model constructor.
+
   api = Model.extend({
     initialize: delegate,
     toggleCheckedIn: toggleCheckedIn
   });
 
 module.exports = api;
+
 });
 require("/src/guestmodel.js");
 
