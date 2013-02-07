@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "jquery-browserify": "*",
+    "underscore": "*",
     "backbone-browserify": "*",
     "es5-shim": "*",
     "tinyapp": "git://github.com/dilvie/tinyapp.git"

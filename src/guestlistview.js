@@ -3,6 +3,7 @@ var app = require('./tinyapp'),
   // Assign Backbone.View to the View var.
 
   View = require('backbone-browserify').View,
+  template = require('underscore').template,
   
   $ = app.$,
   checkedinClass = 'icon-check',
@@ -49,21 +50,28 @@ var app = require('./tinyapp'),
   },
 
   render = function render(guestlist) {
-    var $el = this.$el;
+    var $el = this.$el,
+
+      // Compile the guest template.
+      guestTemplate = template($('#guestTemplate').html());
 
     $el.empty();
 
+
     // Loop over the passed-in guest models and render
     // them as li elements.
-
     guestlist.forEach(function (guestModel) {
-      var $guest;
+      var guest;
+
+      // Build the data object to pass into the template.
       guest = guestModel.toJSON();
-      $guest = $('<li class="' + guestClass + '" ' +
-        'id="' + guest.id +'">' +
-        '<span class="name">' + guest.name +
-        '</span></li>');
-      $guest.appendTo($el);
+
+      // Add the guestClass to the data object.
+      guest.guestClass = guestClass;
+
+      // Process the template data and append the output to the
+      // list element.
+      $el.append(guestTemplate(guest));
     });
 
     return this;
